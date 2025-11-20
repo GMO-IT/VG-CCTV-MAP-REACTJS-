@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* Font chính toàn bộ app */
+html, body {
+  font-family: "Outfit", "Inter", sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Để Tailwind kế thừa */
+* {
+  font-family: inherit !important;
+}
