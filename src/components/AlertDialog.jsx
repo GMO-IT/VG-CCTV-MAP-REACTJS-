@@ -1,5 +1,7 @@
+// src/components/AlertDialog.jsx
 import Lottie from "lottie-react";
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 export default function AlertDialog({
   open,
@@ -7,9 +9,10 @@ export default function AlertDialog({
   message,
   onClose,
   animationData,
-  loop = true,          // ✅ cho mặc định là true luôn
+  loop = true, // ✅ mặc định loop
 }) {
   const lottieRef = useRef(null);
+  const { t } = useTranslation("common");
 
   if (!open) return null;
 
@@ -22,7 +25,7 @@ export default function AlertDialog({
               lottieRef={lottieRef}
               animationData={animationData}
               autoplay
-              loop={loop}  // 🔁 Lottie sẽ tự loop
+              loop={loop}
             />
           </div>
         )}
@@ -41,7 +44,7 @@ export default function AlertDialog({
           onClick={onClose}
           className="mt-4 px-5 py-1.5 rounded-full text-xs font-medium bg-slate-900 text-white hover:bg-emerald-700 shadow-sm"
         >
-          Đóng
+          {t("button.close")}
         </button>
       </div>
     </div>
