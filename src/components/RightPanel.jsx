@@ -39,6 +39,7 @@ export default function RightPanel({
     () => new Set(seenAlertIds || []),
     [seenAlertIds]
   );
+
   const getEventLabelKey = (code) => {
     if (!code) return "alerts.events.unknown";
     const c = String(code).toLowerCase();
@@ -56,6 +57,7 @@ export default function RightPanel({
         return "alerts.events.unknown";
     }
   };
+
   // ===== helper format time từ created_unix (seconds) =====
   const formatAlertTime = (unixSec) => {
     if (!unixSec) return "";
@@ -78,9 +80,10 @@ export default function RightPanel({
 
     if (!selectedCamera || !onUpdateSelectedCamera) return;
 
-    if (type === "cam360") {
+    // 🔹 Circle type: cả cam360 & cam360_upper
+    if (type === "cam360" || type === "cam360_upper") {
       onUpdateSelectedCamera({
-        type: "cam360",
+        type,
         radius: selectedCamera.radius || 90,
         range: undefined,
         angle: undefined,
@@ -170,10 +173,11 @@ export default function RightPanel({
                 </div>
 
                 <span
-                  className={`ml-2 w-2.5 h-2.5 flex-shrink-0 rounded-full ${cam.status === "working"
+                  className={`ml-2 w-2.5 h-2.5 flex-shrink-0 rounded-full ${
+                    cam.status === "working"
                       ? "bg-emerald-500"
                       : "bg-red-500"
-                    }`}
+                  }`}
                 />
               </button>
             );
@@ -184,47 +188,46 @@ export default function RightPanel({
   };
 
   // ====== ALERT LIST (VIEW MODE) ======
-  // ====== ALERT LIST (VIEW MODE) ======
-const renderAlertsOnly = () => {
-  // Không có cảnh báo
-  if (!alerts.length) {
+  const renderAlertsOnly = () => {
+    // Không có cảnh báo
+    if (!alerts.length) {
+      return (
+        <div className="flex-1 p-5 text-sm text-slate-700 space-y-2">
+          <p className="text-xs font-semibold text-slate-700">
+            {t("alerts.emptyTitle")}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            {t("alerts.emptyDesc")}
+          </p>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex-1 p-5 text-sm text-slate-700 space-y-2">
-        <p className="text-xs font-semibold text-slate-700">
-          {t("alerts.emptyTitle")}
-        </p>
-        <p className="text-[11px] text-slate-500">
-          {t("alerts.emptyDesc")}
-        </p>
-      </div>
-    );
-  }
+      <div className="flex-1 p-5 text-sm text-slate-700 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-red-600">
+            {t("alerts.listTitle")}
+          </p>
+          <p className="text-[11px] text-slate-500">
+            {t("alerts.listDesc")}
+          </p>
+        </div>
 
-  return (
-    <div className="flex-1 p-5 text-sm text-slate-700 space-y-3">
-      <div>
-        <p className="text-xs font-semibold text-red-600">
-          {t("alerts.listTitle")}
-        </p>
-        <p className="text-[11px] text-slate-500">
-          {t("alerts.listDesc")}
-        </p>
-      </div>
+        <div className="space-y-3 max-h-[calc(100vh-170px)] overflow-y-auto pr-1">
+          {alerts.map((alert) => {
+            const imageUrl = alert.fullUrl || alert.thumbUrl;
+            const isSeen = seenSet.has(alert.id);
 
-      <div className="space-y-3 max-h-[calc(100vh-170px)] overflow-y-auto pr-1">
-        {alerts.map((alert) => {
-          const imageUrl = alert.fullUrl || alert.thumbUrl;
-          const isSeen = seenSet.has(alert.id);
+            // 👉 LẤY KEY + TEXT TỪ i18n
+            const eventKey = getEventLabelKey(alert.event_code);
+            const eventText = t(eventKey);
 
-          // 👉 LẤY KEY + TEXT TỪ i18n
-          const eventKey = getEventLabelKey(alert.event_code);
-          const eventText = t(eventKey);
-
-          return (
-            <button
-              key={alert.id}
-              onClick={() => onAlertClick && onAlertClick(alert)}
-              className={`
+            return (
+              <button
+                key={alert.id}
+                onClick={() => onAlertClick && onAlertClick(alert)}
+                className={`
                 w-full text-left rounded-xl border
                 flex flex-col overflow-hidden transition
                 ${
@@ -233,47 +236,46 @@ const renderAlertsOnly = () => {
                     : "border-red-100 bg-red-50/70 hover:bg-red-100/80"
                 }
               `}
-            >
-              {imageUrl && (
-                <div className="w-full h-40 bg-black/70">
-                  <img
-                    src={imageUrl}
-                    alt={`Alert ${alert.camera_code}`}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
+              >
+                {imageUrl && (
+                  <div className="w-full h-40 bg-black/70">
+                    <img
+                      src={imageUrl}
+                      alt={`Alert ${alert.camera_code}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
 
-              <div className="px-3 pb-2 pt-2 space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-800 truncate">
-                    {alert.camera_code || "—"}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-slate-500">
-                      {formatAlertTime(alert.created_unix)}
+                <div className="px-3 pb-2 pt-2 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-800 truncate">
+                      {alert.camera_code || "—"}
                     </span>
-                    <span
-                      className={`
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {formatAlertTime(alert.created_unix)}
+                      </span>
+                      <span
+                        className={`
                         w-1.5 h-1.5 rounded-full
                         ${isSeen ? "bg-slate-300" : "bg-red-500"}
                       `}
-                    />
+                      />
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-700 leading-snug">
+                    {eventText}
                   </div>
                 </div>
-
-                <div className="text-[11px] text-slate-700 leading-snug">
-                  {eventText}
-                </div>
-              </div>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
-};
-
+    );
+  };
 
   // ====== CAMERA INFO ONLY (viewCamera != null) ======
   const renderCameraInfoOnly = () => {
@@ -306,7 +308,9 @@ const renderAlertsOnly = () => {
           ? t("camera.typeLower")
           : cam.type === "cam360"
             ? t("camera.type360")
-            : cam.type || "—";
+            : cam.type === "cam360_upper"
+              ? t("camera.type360Upper")
+              : cam.type || "—";
 
     const statusActive = cam.status === "working";
     const statusText = statusActive
@@ -314,6 +318,9 @@ const renderAlertsOnly = () => {
       : t("status.inactive");
 
     const mappedAt = cam.created_at || "—";
+
+    const isCircle =
+      cam.type === "cam360" || cam.type === "cam360_upper";
 
     return (
       <div className="flex-1 p-5 text-sm text-slate-700 space-y-5">
@@ -345,7 +352,8 @@ const renderAlertsOnly = () => {
             {t("camera.type")}:{" "}
             <span className="font-semibold">{typeLabel}</span>
           </p>
-          {cam.type === "cam360" ? (
+
+          {isCircle ? (
             <p className="text-slate-500">
               {t("camera.radius")}:{" "}
               <span className="font-semibold">
@@ -369,6 +377,7 @@ const renderAlertsOnly = () => {
               </p>
             </>
           )}
+
           <p className="text-slate-500">
             {t("camera.location")}:{" "}
             <span className="font-mono">
@@ -377,30 +386,6 @@ const renderAlertsOnly = () => {
             </span>
           </p>
         </div>
-
-        {/* Trạng thái hoạt động */}
-        {/* <div className="space-y-1 text-xs text-slate-600">
-          <p className="font-semibold">
-            {t("camera.statusTitle")}
-          </p>
-          <span
-            className={`
-              inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]
-              ${statusActive
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-red-50 text-red-700"
-              }
-            `}
-          >
-            <span
-              className={`
-                w-1.5 h-1.5 rounded-full
-                ${statusActive ? "bg-emerald-500" : "bg-red-500"}
-              `}
-            />
-            {statusText}
-          </span>
-        </div> */}
 
         {/* Thông tin layout */}
         <div className="space-y-1 text-xs text-slate-600">
@@ -418,6 +403,11 @@ const renderAlertsOnly = () => {
 
   // =============== EDIT MODE CONTENT ================
   const renderEditContent = () => {
+    const isCircle =
+      selectedCamera &&
+      (selectedCamera.type === "cam360" ||
+        selectedCamera.type === "cam360_upper");
+
     return (
       <div className="flex-1 flex flex-col p-5 text-sm text-slate-700 min-h-0 space-y-4">
         {/* HOW TO USE */}
@@ -469,6 +459,13 @@ const renderAlertsOnly = () => {
               label={t("panel.type360")}
               onClick={() => handleChangeType("cam360")}
             />
+            <TypeButton
+              active={placingType === "cam360_upper"}
+              bgClass="bg-indigo-500"
+              Icon={TbDeviceComputerCamera}
+              label={t("panel.type360Upper")}
+              onClick={() => handleChangeType("cam360_upper")}
+            />
           </div>
         </div>
 
@@ -500,7 +497,8 @@ const renderAlertsOnly = () => {
                 />
               </div>
 
-              {selectedCamera.type !== "cam360" && (
+              {/* Nếu không phải camera 360 (trên lầu hoặc thường) → range + angle */}
+              {!isCircle && (
                 <>
                   <RangeBlock
                     title={t("panel.rangeLabel")}
@@ -524,7 +522,8 @@ const renderAlertsOnly = () => {
                 </>
               )}
 
-              {selectedCamera.type === "cam360" && (
+              {/* Camera 360 (cả thường & trên lầu) → radius */}
+              {isCircle && (
                 <RangeBlock
                   title={t("panel.radiusLabel")}
                   value={selectedCamera.radius || 90}
@@ -633,9 +632,10 @@ function TypeButton({ active, bgClass, Icon, label, onClick }) {
       onClick={onClick}
       className={`
         flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition
-        ${active
-          ? "border-slate-900 bg-slate-900/5 text-slate-900"
-          : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+        ${
+          active
+            ? "border-slate-900 bg-slate-900/5 text-slate-900"
+            : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
         }
       `}
     >

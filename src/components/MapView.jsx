@@ -806,6 +806,7 @@
 //   );
 // }
 // src/components/MapView.jsx
+// src/components/MapView.jsx
 import { useRef, useState, useEffect, useMemo } from "react";
 import {
   TransformWrapper,
@@ -841,6 +842,15 @@ const CAMERA_TYPES = {
     fovStroke: "rgba(3,105,161,0.7)",
     lineColor: "#0ea5e9", // 🔹 sky-500
   },
+  // 🔹 NEW: camera 360 trên lầu
+  cam360_upper: {
+    icon: TbDeviceComputerCamera,
+    bgClass: "bg-indigo-500",
+    textClass: "text-indigo-500",
+    fovFill: "rgba(129,140,248,0.16)",
+    fovStroke: "rgba(79,70,229,0.7)",
+    lineColor: "#6366f1", // indigo-500
+  },
 };
 
 // khoảng cách tối thiểu giữa 2 camera (theo %)
@@ -859,7 +869,8 @@ const FILTER_OPTIONS = [
   { value: "all", key: "filter.all" },
   { value: "upper", key: "filter.upper" },
   { value: "lower", key: "filter.lower" },
-  { value: "cam360", key: "filter.cam360" }
+  { value: "cam360", key: "filter.cam360" },
+  { value: "cam360_upper", key: "filter.cam360Upper" },
   // ,{ value: "status_on", key: "filter.statusOn" },
   // { value: "status_off", key: "filter.statusOff" },
 ];
@@ -879,6 +890,7 @@ export default function MapView({
   focusCameraCode,
   // info để vẽ line tether tới floating inspector
   inspectorLink,
+  alignLeft = false,
 }) {
   const containerRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
@@ -1068,18 +1080,8 @@ export default function MapView({
 
     const cfg = CAMERA_TYPES[cam.type] || {};
 
-    // 👉 TẠM THỜI KHÔNG ĐỔI MÀU LINE KHI CAMERA OFF
-    // const isOff =
-    //   typeof cam.status === "string" &&
-    //   cam.status.toLowerCase() === "off";
-
     let color =
       cfg.lineColor || cfg.fovStroke || "rgba(15,23,42,0.9)";
-
-    // if (isOff) {
-    //   // gray-400
-    //   color = "#9ca3af";
-    // }
 
     setInspectorLine({ x1, y1, x2, y2, color });
   };
@@ -1113,6 +1115,7 @@ export default function MapView({
         case "upper":
         case "lower":
         case "cam360":
+        case "cam360_upper":
           return cam.type === filterMode;
         case "status_on":
           return isOn;
@@ -1135,7 +1138,7 @@ export default function MapView({
   return (
     <div className="absolute inset-0 overflow-hidden bg-white">
       <TransformWrapper
-        initialScale={1}
+        initialScale={0.85}
         minScale={0.85}
         maxScale={8}
         wheel={{ step: 0.3 }}
@@ -1182,8 +1185,7 @@ export default function MapView({
             if (!draggingId || !editMode) return;
             if (!containerRef.current) return;
 
-            const rect =
-              containerRef.current.getBoundingClientRect();
+            const rect = containerRef.current.getBoundingClientRect();
 
             const cxNew = e.clientX - rect.left;
             const cyNew = e.clientY - rect.top;
@@ -1203,9 +1205,7 @@ export default function MapView({
               return;
             }
 
-            const dragged = cameras.find(
-              (c) => c.id === draggingId
-            );
+            const dragged = cameras.find((c) => c.id === draggingId);
 
             if (dragged) {
               const tooClose = cameras.some((c) => {
@@ -1266,9 +1266,7 @@ export default function MapView({
                 {!editMode && (
                   <div className="relative">
                     <button
-                      onClick={() =>
-                        setFilterOpen((open) => !open)
-                      }
+                      onClick={() => setFilterOpen((open) => !open)}
                       className="px-3 h-9 rounded-full bg-white shadow-md border border-slate-200 text-[11px] text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                     >
                       <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
@@ -1310,7 +1308,11 @@ export default function MapView({
                 wrapperClass="w-full h-full"
                 contentClass="w-full h-full"
               >
-                <div className="w-full h-full flex items-center justify-center">
+                <div
+                  className={`w-full h-full flex items-center ${
+                    alignLeft ? "justify-start" : "justify-center"
+                  }`}
+                >
                   <div
                     ref={containerRef}
                     className={`relative ${
@@ -1358,17 +1360,13 @@ export default function MapView({
 
                       const isTri =
                         cam.type === "upper" || cam.type === "lower";
-                      const isCircle = cam.type === "cam360";
+                      const isCircle =
+                        cam.type === "cam360" || cam.type === "cam360_upper";
 
                       const selected = selectedCameraId === cam.id;
                       const IconComp = cfg.icon;
                       const codeLabel = cam.code || "";
 
-                      // const activeAlert =
-                      //   cam.code && latestAlertByCamera[cam.code];
-                      // const hasAlertThumb = !!activeAlert;
-
-                      // màu alert theo event_code
                       const eventCode =
                         cam.alertCode?.toLowerCase() || null;
 
@@ -1377,35 +1375,20 @@ export default function MapView({
                           ALERT_COLOR_BY_EVENT.default
                         : ALERT_COLOR_BY_EVENT.default;
 
-                      // const thumbURL = cam.alertThumb;
-
                       const showLabelForThis =
                         codeLabel &&
-                        // !thumbURL && // tạm thời không ẩn label khi có thumbnail
                         (selected || hoveredId === cam.id);
 
-                      // z-index: alert luôn cao nhất
                       let zIndex = 40;
                       if (cam.alarm) zIndex += 30;
                       if (selected) zIndex += 10;
                       if (hoveredId === cam.id) zIndex += 20;
 
-                      // 👉 TẠM THỜI KHÔNG ĐỔI ICON THEO STATUS OFF
-                      // const isOff =
-                      //   typeof cam.status === "string" &&
-                      //   cam.status.toLowerCase() === "off";
-
-                      // const iconBgClass = isOff
-                      //   ? "bg-slate-400"
-                      //   : cfg.bgClass;
-
                       const iconBgClass = cfg.bgClass;
-
-                      // const thumbUrl = cam.alertThumb;
 
                       return (
                         <div key={cam.id}>
-                          {showFov && /* !isOff && */ (
+                          {showFov && (
                             <>
                               {isTri && (
                                 <svg
@@ -1450,7 +1433,7 @@ export default function MapView({
                             </>
                           )}
 
-                          {/* ICON + LABEL (thumbnail tạm thời tắt) */}
+                          {/* ICON + LABEL */}
                           <div
                             className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
                             style={{
@@ -1462,13 +1445,13 @@ export default function MapView({
                             {showLabelForThis && (
                               <div
                                 className={`
-                                  absolute left-1/2 -translate-x-1/2 
-                                  px-2.5 py-0.5 rounded-full
-                                  text-[11px] font-semibold
-                                  text-white shadow-md border border-black/10
-                                  pointer-events-none whitespace-nowrap
-                                  ${iconBgClass}
-                                `}
+                              absolute left-1/2 -translate-x-1/2 
+                              px-2.5 py-0.5 rounded-full
+                              text-[11px] font-semibold
+                              text-white shadow-md border border-black/10
+                              pointer-events-none whitespace-nowrap
+                              ${iconBgClass}
+                            `}
                                 style={{
                                   fontSize: `${11 * labelScale}px`,
                                   top: `${-labelOffsetPx}px`,
@@ -1477,32 +1460,6 @@ export default function MapView({
                                 {codeLabel}
                               </div>
                             )}
-
-                            {/*
-                            {thumbUrl && (
-                              <div
-                                className="absolute left-1/2 -translate-x-1/2 pointer-events-none"
-                                style={{
-                                  top: `${-thumbOffsetPx}px`,
-                                }}
-                              >
-                                <div
-                                  className="rounded-md overflow-hidden border shadow-md bg-black/60"
-                                  style={{
-                                    width: `${40 * labelScale}px`,
-                                    height: `${64 * labelScale}px`,
-                                    borderColor: alertColor,
-                                  }}
-                                >
-                                  <img
-                                    src={thumbUrl}
-                                    alt={`Alert ${activeAlert?.camera_code}`}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </div>
-                              </div>
-                            )}
-                            */}
 
                             {/* wrapper icon - gán ref để tính toạ độ tether */}
                             <div
@@ -1527,10 +1484,8 @@ export default function MapView({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (editMode) {
-                                  if (!onSelectCamera) return;
-                                  if (selectedCameraId === cam.id) {
-                                    onSelectCamera(null);
-                                  } else {
+                                  // 🔹 Không toggle nữa – luôn select camera này
+                                  if (typeof onSelectCamera === "function") {
                                     onSelectCamera(cam.id);
                                   }
                                 } else if (onInspectCamera) {
@@ -1583,7 +1538,7 @@ export default function MapView({
                                 <div className="pointer-events-none absolute inset-0 -m-1 rounded-full border-2 border-sky-500" />
                               )}
 
-                              {/* Vòng alert: màu theo event_code */}
+                              {/* Vòng alert */}
                               {cam.alarm && (
                                 <div
                                   className="pointer-events-none absolute inset-0 flex items-center justify-center -z-10 overflow-visible"
@@ -1615,6 +1570,11 @@ export default function MapView({
                                     x: cam.x ?? 0,
                                     y: cam.y ?? 0,
                                   };
+
+                                  // 🔹 Khi bắt đầu drag, đảm bảo select đúng camera này
+                                  if (typeof onSelectCamera === "function") {
+                                    onSelectCamera(cam.id);
+                                  }
                                 }}
                               >
                                 <IconComp className="w-5 h-5 text-white" />
@@ -1639,10 +1599,10 @@ export default function MapView({
               {contextMenu.open && contextMenu.camera && (
                 <div
                   className="
-                    fixed z-40 
-                    bg-white rounded-xl shadow-xl border border-slate-200
-                    text-xs text-slate-700
-                  "
+                fixed z-40 
+                bg-white rounded-xl shadow-xl border border-slate-200
+                text-xs text-slate-700
+              "
                   style={{
                     top: contextMenu.y + 8,
                     left: contextMenu.x + 8,
@@ -1680,7 +1640,7 @@ export default function MapView({
         }}
       </TransformWrapper>
 
-      {/* SVG tether line: theo toạ độ viewport, nhưng line bắt đầu *ngoài* icon */}
+      {/* SVG tether line */}
       {inspectorLine && (
         <svg
           className="pointer-events-none fixed inset-0 z-30"
@@ -1696,7 +1656,6 @@ export default function MapView({
             strokeWidth="3"
             strokeLinecap="round"
           />
-          {/* DOT ở inspector */}
           <circle
             cx={inspectorLine.x2}
             cy={inspectorLine.y2}

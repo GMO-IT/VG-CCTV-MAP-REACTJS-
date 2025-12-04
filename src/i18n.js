@@ -42,6 +42,7 @@ const resources = {
         typeUpper: "Trên lầu",
         typeLower: "Dưới lầu",
         type360: "Camera 360°",
+        type360Upper: "Camera 360° trên lầu",
         currentCam: "Camera đang chọn",
         currentCode: "Mã hiện tại:",
         noCamera:
@@ -102,6 +103,8 @@ const resources = {
         typeUpper: "Trên lầu",
         typeLower: "Dưới lầu",
         type360: "Camera 360°",
+        type360Upper: "Camera 360° trên lầu", // NEW
+
         viewDistance: "Khoảng cách tầm nhìn",
         rotationAngle: "Góc quay",
         radius: "Bán kính",
@@ -132,6 +135,8 @@ const resources = {
         upper: "Camera trên lầu",
         lower: "Camera dưới lầu",
         cam360: "Camera 360°",
+        cam360Upper: "Camera 360° trên lầu", // NEW
+
         statusOn: "Camera đang hoạt động",
         statusOff: "Camera đang tắt",
       },
@@ -175,6 +180,8 @@ const resources = {
         typeUpper: "Upper floor",
         typeLower: "Lower floor",
         type360: "360° Camera",
+        type360Upper: "Upper-floor 360° camera", // NEW
+
         currentCam: "Selected camera",
         currentCode: "Current code:",
         noCamera:
@@ -236,6 +243,8 @@ const resources = {
         typeUpper: "Upper floor",
         typeLower: "Lower floor",
         type360: "360° Camera",
+        type360Upper: "Upper-floor 360° camera", // NEW
+
         viewDistance: "View distance",
         rotationAngle: "Rotation angle",
         radius: "Radius",
@@ -267,6 +276,8 @@ const resources = {
         upper: "Upper-floor cameras",
         lower: "Lower-floor cameras",
         cam360: "360° cameras",
+        cam360Upper: "Upper-floor 360° cameras", // NEW
+
         statusOn: "Active cameras",
         statusOff: "Inactive cameras",
       },
@@ -310,6 +321,8 @@ const resources = {
         typeUpper: "樓上",
         typeLower: "樓下",
         type360: "360° 攝影機",
+        type360Upper: "樓上 360° 攝影機", // NEW
+
         currentCam: "目前選擇的攝影機",
         currentCode: "目前代碼：",
         noCamera:
@@ -370,6 +383,8 @@ const resources = {
         typeUpper: "樓上",
         typeLower: "樓下",
         type360: "360° 攝影機",
+        type360Upper: "樓上 360° 攝影機",
+
         viewDistance: "視角距離",
         rotationAngle: "旋轉角度",
         radius: "半徑",
@@ -400,6 +415,8 @@ const resources = {
         upper: "樓上攝影機",
         lower: "樓下攝影機",
         cam360: "360° 攝影機",
+        cam360Upper: "樓上 360° 攝影機", // NEW
+
         statusOn: "運作中的攝影機",
         statusOff: "已關閉的攝影機",
       },

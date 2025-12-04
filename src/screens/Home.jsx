@@ -18,6 +18,7 @@ const DEFAULT_RANGES = {
   upper: 100,
   lower: 100,
   cam360: 90,
+  cam360_upper: 90,
 };
 
 // size inspector dạng window (không fullscreen)
@@ -75,7 +76,7 @@ const getEventLabelKey = (code) => {
 function mapLayoutRowToCamera(row) {
   const camType = row.cam_type;
   const isTri = camType === "upper" || camType === "lower";
-  const isCircle = camType === "cam360";
+  const isCircle = camType === "cam360" || camType === "cam360_upper";
 
   // parse location JSON nếu backend trả dạng string
   let loc = row.location_json || row.location || {};
@@ -440,52 +441,81 @@ export default function Home() {
   const selectedCamera =
     cameras.find((c) => c.id === selectedCameraId) || null;
 
+  // const handleMapClick = (x, y) => {
+  //   if (!editMode || !placingType) return;
+
+  //   let newId = 1;
+
+  //   setCameras((prev) => {
+  //     newId = prev.length ? prev[prev.length - 1].id + 1 : 1;
+  //     const base = {
+  //       id: newId,
+  //       x,
+  //       y,
+  //       type: placingType,
+  //       hasLayout: false, // camera mới chỉ tồn tại trên client
+  //     };
+
+  //     if (placingType === "cam360") {
+  //       return [
+  //         ...prev,
+  //         {
+  //           ...base,
+  //           radius: DEFAULT_RANGES.cam360,
+  //         },
+  //       ];
+  //     }
+
+  //     return [
+  //       ...prev,
+  //       {
+  //         ...base,
+  //         range:
+  //           placingType === "upper"
+  //             ? DEFAULT_RANGES.upper
+  //             : DEFAULT_RANGES.lower,
+  //         angle: 0,
+  //       },
+  //     ];
+  //   });
+
+  //   // camera mới thêm: mặc định alarm = false (client control)
+  //   setAlarmState((prev) => ({
+  //     ...prev,
+  //     [String(newId)]: false,
+  //   }));
+
+  //   setSelectedCameraId(newId);
+  // };
   const handleMapClick = (x, y) => {
     if (!editMode || !placingType) return;
 
-    let newId = 1;
+    const id = crypto.randomUUID?.() ?? Date.now().toString();
 
-    setCameras((prev) => {
-      newId = prev.length ? prev[prev.length - 1].id + 1 : 1;
-      const base = {
-        id: newId,
-        x,
-        y,
-        type: placingType,
-        hasLayout: false, // camera mới chỉ tồn tại trên client
-      };
+    const isCircle = placingType === "cam360" || placingType === "cam360_upper";
 
-      if (placingType === "cam360") {
-        return [
-          ...prev,
-          {
-            ...base,
-            radius: DEFAULT_RANGES.cam360,
-          },
-        ];
-      }
+    const newCam = {
+      id,
+      x,
+      y,
+      type: placingType,
+      code: "",
+      hasLayout: false,
+      range: isCircle ? undefined : DEFAULT_RANGES[placingType] ?? 100,
+      angle: isCircle ? undefined : 0,
+      radius: isCircle ? DEFAULT_RANGES[placingType] ?? 90 : undefined,
+      status: "working",
+    };
 
-      return [
-        ...prev,
-        {
-          ...base,
-          range:
-            placingType === "upper"
-              ? DEFAULT_RANGES.upper
-              : DEFAULT_RANGES.lower,
-          angle: 0,
-        },
-      ];
-    });
+    setCameras(prev => [...prev, newCam]);
 
-    // camera mới thêm: mặc định alarm = false (client control)
-    setAlarmState((prev) => ({
-      ...prev,
-      [String(newId)]: false,
-    }));
+    // ✅ chọn luôn camera mới
+    setSelectedCameraId(id);
 
-    setSelectedCameraId(newId);
+    // nếu có state viewCamera thì nên clear
+    setViewCamera?.(null);
   };
+
 
   const handleSelectCamera = (id) => {
     if (!editMode) return;
@@ -904,7 +934,7 @@ export default function Home() {
   return (
     <div className="fixed inset-0 bg-white overflow-hidden">
       {/* MAP */}
-      <MapView
+      {/* <MapView
         key={mapKey}
         mapImage={mapImage}
         cameras={camerasForMap}
@@ -922,7 +952,34 @@ export default function Home() {
         // mở panel thông tin camera khi phải chuột (view mode)
         onViewCameraDetails={handleViewCameraDetails}
         inspectorLink={inspectorLink}
-      />
+      /> */}
+      <div
+        className={`
+    relative h-full flex-1
+    transition-[margin-right] duration-300 ease-out
+    ${isPanelOpen ? "mr-[360px]" : "mr-0"}
+  `}
+      >
+        <MapView
+          key={`${mapKey}-${isPanelOpen ? "panel-open" : "panel-closed"}`}
+          mapImage={mapImage}
+          cameras={camerasForMap}
+          editMode={editMode}
+          alerts={alerts}
+          focusCameraCode={focusCameraCode}
+          selectedCameraId={editMode ? selectedCameraId : null}
+          onMapClick={handleMapClick}
+          onSelectCamera={handleSelectCamera}
+          onUpdateCamera={handleUpdateCamera}
+          onDeleteCamera={handleDeleteCamera}
+          onInspectCamera={handleInspectCamera}
+          onViewCameraDetails={handleViewCameraDetails}
+          inspectorLink={inspectorLink}
+          // 👇 mới
+          alignLeft={isPanelOpen}
+        />
+      </div>
+
 
       {/* Language switcher + MODE + EDIT BUTTON */}
       <div className="absolute top-4 right-6 z-0 flex items-center gap-3">
