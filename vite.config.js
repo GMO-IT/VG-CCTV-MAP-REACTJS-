@@ -13,19 +13,19 @@ export default defineConfig({
   server: {
     host: "0.0.0.0", // cho các máy LAN truy cập
     port: 5173,
-    proxy: {
-      // mọi request bắt đầu bằng /cctv sẽ được proxy sang IP camera
-      "/cctv": {
-        target: "http://10.13.14.13",
-        changeOrigin: true,
-        secure: false,
-        // rewrite /cctv/... => ... (giữ nguyên phần sau)
-        rewrite: (path) => path.replace(/^\/cctv/, ""),
-        headers: {
-          // gắn Basic Auth ở Vite (backend), browser không thấy
-          Authorization: BASIC_AUTH,
-        },
-      },
-    },
+    // proxy: {
+    //   // mọi request bắt đầu bằng /cctv sẽ được proxy sang IP camera
+    //   "/cctv": {
+    //     target: "http://10.13.14.13",
+    //     changeOrigin: true,
+    //     secure: false,
+    //     // rewrite /cctv/... => ... (giữ nguyên phần sau)
+    //     rewrite: (path) => path.replace(/^\/cctv/, ""),
+    //     headers: {
+    //       // gắn Basic Auth ở Vite (backend), browser không thấy
+    //       Authorization: BASIC_AUTH,
+    //     },
+    //   },
+    // },
   },
 });

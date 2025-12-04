@@ -8,7 +8,7 @@ import RightPanel from "../components/RightPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import AlertDialog from "../components/AlertDialog";
 
-import mapImage from "../assets/images/mapNetCang_cropped2.png";
+import mapImage from "../assets/images/mapNetCang_cropped3.png";
 
 // Lottie animations
 import successAnim from "../assets/lotties/successAnimation.json";
@@ -24,13 +24,52 @@ const DEFAULT_RANGES = {
 const DEFAULT_INSPECTOR_SIZE = { width: 720, height: 440 };
 
 // Tạm thời: mọi camera đều dùng chung 1 snapshot URL (qua proxy Vite)
-const SNAP_URL = "/cctv/cgi-bin/viewer/video.jpg?resolution=1920x1080";
+// const SNAP_URL = "/cctv/cgi-bin/viewer/video.jpg?resolution=1920x1080";
+// Tài khoản mặc định trên camera
+const SNAP_USER = "ps";
+const SNAP_PASS = "ps@12345";
+const SNAP_PROXY_BASE =
+  "http://10.13.34.180:8001/api/cctv/proxy/snapshot";
+/**
+ * Build URL snapshot theo IP camera:
+ *  http://ps:ps%4012345@<IP>/cgi-bin/viewer/video.jpg?resolution=1920x1080&_=<tick>
+ */
+function buildSnapshotUrl(ip, tick = 0) {
+  if (!ip) return "";
+
+  const u = new URL(SNAP_PROXY_BASE);
+  u.searchParams.set("ip", ip);
+  u.searchParams.set("_", String(tick)); // tránh cache
+  return u.toString();
+}
 
 // ===== API base cho Laravel CCTV layout (Minh Tam) =====
 const CCTV_API_BASE = "http://gmo021.cansportsvg.com/api/cctv";
 
 // ===== BASE URL ảnh warning (thumb/full) – chỉnh lại cho đúng backend =====
-const WARNING_IMAGE_BASE = "http://gmo021.cansportsvg.com/api/storage/app/cctv/";
+const WARNING_IMAGE_BASE =
+  "http://gmo021.cansportsvg.com/api/storage/app/cctv/";
+
+// Cửa sổ cảnh báo: 4 giờ gần đây
+const WARNING_WINDOW_SECONDS = 4 * 60 * 60;
+// helper: map event_code -> i18n key
+const getEventLabelKey = (code) => {
+  if (!code) return "alerts.events.unknown";
+  const c = String(code).toLowerCase();
+
+  switch (c) {
+    case "crowb":
+      return "alerts.events.crowb";
+    case "intruder":
+      return "alerts.events.intruder";
+    case "fire":
+      return "alerts.events.fire";
+    case "smartphone":
+      return "alerts.events.smartphone";
+    default:
+      return "alerts.events.unknown";
+  }
+};
 
 // helper: map 1 row từ DB layout -> object camera cho MapView
 function mapLayoutRowToCamera(row) {
@@ -106,8 +145,38 @@ function mapCctvRow(row) {
 
 export default function Home() {
   const { t, i18n } = useTranslation("common");
+  const [mapKey, setMapKey] = useState(0);
 
-  const [alerts, setAlerts] = useState([]); // danh sách cảnh báo 10 phút gần đây
+  const [alerts, setAlerts] = useState([]); // danh sách cảnh báo 4 giờ gần đây
+
+  // ===== seenAlertIds: lưu trong localStorage =====
+  const [seenAlertIds, setSeenAlertIds] = useState(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(
+        "cctv_seen_alert_ids_v1"
+      );
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // mỗi khi seenAlertIds thay đổi -> ghi lại localStorage (giữ tối đa 500 id)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const trimmed = seenAlertIds.slice(-500);
+      window.localStorage.setItem(
+        "cctv_seen_alert_ids_v1",
+        JSON.stringify(trimmed)
+      );
+    } catch (e) {
+      console.warn("Failed to persist seenAlertIds", e);
+    }
+  }, [seenAlertIds]);
 
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -132,6 +201,7 @@ export default function Home() {
   const [selectedCameraId, setSelectedCameraId] = useState(null);
 
   const [confirmSave, setConfirmSave] = useState(false);
+  const [viewCamera, setViewCamera] = useState(null);
 
   const [alertState, setAlertState] = useState({
     open: false,
@@ -163,6 +233,22 @@ export default function Home() {
 
   // dùng để yêu cầu MapView focus vào camera theo cảnh báo
   const [focusCameraCode, setFocusCameraCode] = useState(null);
+
+  // Alert đang xem trong dialog ảnh
+  const [viewedAlert, setViewedAlert] = useState(null);
+
+  // ====== text thời gian & mô tả event cho dialog alert ======
+  const viewedAlertTime = viewedAlert?.created_unix
+    ? new Date(viewedAlert.created_unix * 1000).toLocaleString(
+      i18n.language?.startsWith("en") ? "en-US" : "vi-VN"
+    )
+    : "—";
+
+  const viewedEventText =
+    viewedAlert && viewedAlert.event_code
+      ? t(getEventLabelKey(viewedAlert.event_code))
+      : "";
+
 
   // ===================== GỌI API LAYOUT (load layout lần đầu) =====================
   useEffect(() => {
@@ -245,16 +331,13 @@ export default function Home() {
     return () => clearInterval(id);
   }, [inspector.open]);
 
-  // ===================== POLLING WARNING (30s, giữ 10 phút gần nhất) =====================
+  // ===================== POLLING WARNING (30s, giữ 4 giờ gần nhất) =====================
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const res = await fetch(
-          `${CCTV_API_BASE}/warning/recent`,
-          {
-            method: "GET",
-          }
-        );
+        const res = await fetch(`${CCTV_API_BASE}/warning/recent`, {
+          method: "GET",
+        });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -264,32 +347,50 @@ export default function Home() {
         }
 
         const nowSec = Math.floor(Date.now() / 1000);
-        const tenMinAgo = nowSec - 10 * 60;
+        const fourHoursAgo = nowSec - WARNING_WINDOW_SECONDS;
 
-        // lọc 10 phút gần nhất (phòng backend trả dư)
+        // Lọc 4 giờ gần nhất
         const filtered = data.data.filter((ev) => {
           if (typeof ev.created_unix !== "number") return true;
-          return ev.created_unix >= tenMinAgo;
+          return ev.created_unix >= fourHoursAgo;
         });
 
-        // sort mới -> cũ
+        // Sort mới → cũ
         filtered.sort(
-          (a, b) =>
-            (b.created_unix || 0) - (a.created_unix || 0)
+          (a, b) => (b.created_unix || 0) - (a.created_unix || 0)
         );
 
-        // map thêm full URL thumb/full
-        const mapped = filtered.map((ev) => ({
-          ...ev,
-          thumbUrl: ev.thumbshot_url
-            ? `${WARNING_IMAGE_BASE}${ev.thumbshot_url}`
-            : null,
-          fullUrl: ev.fullshot_url
-            ? `${WARNING_IMAGE_BASE}${ev.fullshot_url}`
-            : null,
-        }));
+        // Map thumbnail (chỉ hiện 15s)
+        const mapped = filtered.map((ev) => {
+          const age = nowSec - (ev.created_unix || 0);
 
-        setAlerts(mapped);
+          // TẠM THỜI: luôn cho hiện thumbnail để debug
+          const showThumb = true; // age <= 30;
+
+          return {
+            ...ev,
+            thumbUrl:
+              showThumb && ev.thumbshot_url
+                ? `${WARNING_IMAGE_BASE}${ev.thumbshot_url}`
+                : null,
+            fullUrl: ev.fullshot_url
+              ? `${WARNING_IMAGE_BASE}${ev.fullshot_url}`
+              : null,
+          };
+        });
+
+        // cập nhật + phát hiện alert mới để auto mở panel
+        setAlerts((prev) => {
+          const prevIds = new Set(prev.map((a) => a.id));
+          const hasNew = mapped.some((a) => !prevIds.has(a.id));
+
+          if (hasNew) {
+            setIsPanelOpen(true); // tự mở panel warning
+            setViewCamera(null); // đảm bảo ở chế độ cảnh báo
+          }
+
+          return mapped;
+        });
       } catch (err) {
         console.error("Polling warning events failed:", err);
       }
@@ -297,8 +398,28 @@ export default function Home() {
 
     fetchAlerts(); // gọi lần đầu
 
-    const id = setInterval(fetchAlerts, 30_000);
+    const id = setInterval(fetchAlerts, 5000);
     return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    const handleResizeOrFullscreen = () => {
+      // mỗi lần size viewport đổi → remount MapView
+      setMapKey((prev) => prev + 1);
+    };
+
+    window.addEventListener("resize", handleResizeOrFullscreen);
+    document.addEventListener(
+      "fullscreenchange",
+      handleResizeOrFullscreen
+    );
+
+    return () => {
+      window.removeEventListener("resize", handleResizeOrFullscreen);
+      document.removeEventListener(
+        "fullscreenchange",
+        handleResizeOrFullscreen
+      );
+    };
   }, []);
 
   const openAlert = ({ title, message, animationData }) => {
@@ -458,6 +579,7 @@ export default function Home() {
     if (!editMode) {
       // chuyển sang edit
       setIsPanelOpen(true);
+      setViewCamera(null); // ⬅️ bỏ chế độ xem info, về màn edit
     } else {
       // thoát edit
       setSelectedCameraId(null);
@@ -468,6 +590,7 @@ export default function Home() {
         camera: null,
         mode: "window",
       }));
+      setViewCamera(null); // ⬅️ clear luôn
     }
   };
 
@@ -580,7 +703,13 @@ export default function Home() {
   const handleViewCameraDetails = (camera) => {
     // View mode: click trên icon chuột phải
     if (editMode) return;
-    setSelectedCameraId(camera.id);
+
+    // dùng cho panel info
+    setViewCamera(camera);
+
+    // optional: không cần giữ selectedCameraId trong view mode
+    setSelectedCameraId(null);
+
     setIsPanelOpen(true);
   };
 
@@ -646,12 +775,25 @@ export default function Home() {
     (c) => c.code && !usedCodes.has(c.code)
   );
 
-  // ===== Tính các camera đang có cảnh báo (10 phút gần đây) =====
-  const activeAlertCodes = new Set(
-    alerts
-      .map((a) => a.camera_code && a.camera_code.trim())
-      .filter(Boolean)
-  );
+  // ===== Tính các camera đang có cảnh báo CHƯA XEM (4 giờ gần đây) =====
+  const unseenIdSet = new Set(seenAlertIds || []);
+  const seenIdSet = new Set(seenAlertIds || []);
+
+  // ===== Tính alert mới nhất cho từng camera =====
+  const latestAlertByCode = {};
+
+  for (const a of alerts) {
+    if (!a.camera_code) continue;
+
+    const code = a.camera_code.trim();
+    if (!code) continue;
+
+    // Chỉ lấy alert mới nhất
+    if (!latestAlertByCode[code]) {
+      latestAlertByCode[code] = a;
+    }
+  }
+
 
   // ===== Merge layout + alarmState + info từ cctv_tbl + alert → camerasForMap =====
   const cctvByCode = {};
@@ -659,26 +801,57 @@ export default function Home() {
     if (c.code) cctvByCode[c.code] = c;
   }
 
-  const camerasForMap = cameras.map((cam) => {
-    const key = cam.code || String(cam.id);
-    const extra =
-      cam.code && cctvByCode[cam.code]
-        ? {
+  const camerasForMap = cameras
+    .map((cam) => {
+      const key = cam.code || String(cam.id);
+
+      const extra =
+        cam.code && cctvByCode[cam.code]
+          ? {
             status: cctvByCode[cam.code].status,
             location_json: cctvByCode[cam.code].location_json,
           }
-        : {};
+          : {};
 
-    const hasDbAlert =
-      cam.code && activeAlertCodes.has(cam.code.trim());
+      const rawAlert = cam.code ? latestAlertByCode[cam.code] : null;
 
-    return {
-      ...cam,
-      ...extra,
-      // alarm = từ DB OR từ state client (nếu sau này dùng)
-      alarm: !!alarmState[key] || !!hasDbAlert,
-    };
-  });
+      // ❗ Nếu alert này đã xem rồi (ID nằm trong seenIdSet) → bỏ, coi như hết alert
+      const alertObj =
+        rawAlert && rawAlert.id != null && seenIdSet.has(rawAlert.id)
+          ? null
+          : rawAlert;
+
+      let alertColor = null;
+      if (alertObj?.event_code === "fire") alertColor = "red";
+      else if (alertObj?.event_code === "intruder") alertColor = "yellow";
+      else if (alertObj?.event_code === "smartphone") alertColor = "green";
+      // console.log(
+      //   "[DEBUG] camerasForMap",
+      //   cameras.map((c) => ({
+      //     id: c.id,
+      //     code: c.code,
+      //     hasAlert: !!(latestAlertByCode[c.code || ""]),
+      //     alertThumb: (latestAlertByCode[c.code || ""] || {}).thumbUrl,
+      //   }))
+      // );
+
+      return {
+        ...cam,
+        ...extra,
+
+        // camera chỉ alarm khi:
+        // - alarmState[key] = true (manual)
+        // - HOẶC còn alert chưa xem
+        alarm: !!alarmState[key] || !!alertObj,
+
+        // thông tin alert (chỉ giữ nếu chưa xem)
+        alertThumb: alertObj?.thumbUrl || null,
+        alertFull: alertObj?.fullUrl || null,
+        alertCode: alertObj?.event_code || null,
+        alertTime: alertObj?.created_unix || null,
+        alertColor,
+      };
+    })
 
   const handlePickCameraCode = (code) => {
     if (!editMode || !selectedCamera) return;
@@ -687,12 +860,24 @@ export default function Home() {
 
   // ===== Click vào 1 notification trong panel =====
   const handleAlertClick = (alert) => {
-    if (!alert || !alert.camera_code) return;
+    if (!alert) return;
+
+    // đánh dấu đã xem (lưu cả state + localStorage)
+    if (alert.id !== undefined && alert.id !== null) {
+      setSeenAlertIds((prev) =>
+        prev.includes(alert.id) ? prev : [...prev, alert.id]
+      );
+    }
+
+    // mở dialog ảnh
+    setViewedAlert(alert);
+
+    if (!alert.camera_code) return;
     const cam = cameras.find(
       (c) => c.code && c.code === alert.camera_code
     );
     if (!cam) {
-      // camera chưa có trên map -> bỏ qua
+      // camera chưa có trên map -> bỏ qua zoom
       return;
     }
 
@@ -704,23 +889,39 @@ export default function Home() {
     }
   };
 
+  const inspectorLink =
+    inspector.open &&
+      !editMode &&
+      inspector.mode === "window" &&
+      inspector.camera
+      ? {
+        cameraId: inspector.camera.id,
+        centerX: inspector.x + inspector.width / 2,
+        centerY: inspector.y + inspector.height / 2,
+      }
+      : null;
+
   return (
-    <div className="w-screen h-screen bg-white overflow-hidden relative">
+    <div className="fixed inset-0 bg-white overflow-hidden">
       {/* MAP */}
       <MapView
+        key={mapKey}
         mapImage={mapImage}
         cameras={camerasForMap}
         editMode={editMode}
         alerts={alerts}
         focusCameraCode={focusCameraCode}
-        // highlight chỉ dùng khi edit
+        // highlight CHỈ dùng khi edit mode
         selectedCameraId={editMode ? selectedCameraId : null}
         onMapClick={handleMapClick}
         onSelectCamera={handleSelectCamera}
         onUpdateCamera={handleUpdateCamera}
         onDeleteCamera={handleDeleteCamera}
+        // mở inspector khi double click (edit mode)
         onInspectCamera={handleInspectCamera}
+        // mở panel thông tin camera khi phải chuột (view mode)
         onViewCameraDetails={handleViewCameraDetails}
+        inspectorLink={inspectorLink}
       />
 
       {/* Language switcher + MODE + EDIT BUTTON */}
@@ -729,42 +930,38 @@ export default function Home() {
         <div className="flex items-center gap-1 bg-white/80 border border-slate-200 rounded-full px-2 py-1 text-[11px] text-slate-700 shadow-sm">
           <button
             onClick={() => setLang("vi")}
-            className={`px-2 py-0.5 rounded-full ${
-              i18n.language?.startsWith("vi")
-                ? "bg-slate-900 text-white"
-                : "hover:bg-slate-100"
-            }`}
+            className={`px-2 py-0.5 rounded-full ${i18n.language?.startsWith("vi")
+              ? "bg-slate-900 text-white"
+              : "hover:bg-slate-100"
+              }`}
           >
             VI
           </button>
           <button
             onClick={() => setLang("en")}
-            className={`px-2 py-0.5 rounded-full ${
-              i18n.language?.startsWith("en")
-                ? "bg-slate-900 text-white"
-                : "hover:bg-slate-100"
-            }`}
+            className={`px-2 py-0.5 rounded-full ${i18n.language?.startsWith("en")
+              ? "bg-slate-900 text-white"
+              : "hover:bg-slate-100"
+              }`}
           >
             EN
           </button>
           <button
             onClick={() => setLang("zh-TW")}
-            className={`px-2 py-0.5 rounded-full ${
-              i18n.language === "zh-TW"
-                ? "bg-slate-900 text-white"
-                : "hover:bg-slate-100"
-            }`}
+            className={`px-2 py-0.5 rounded-full ${i18n.language === "zh-TW"
+              ? "bg-slate-900 text-white"
+              : "hover:bg-slate-100"
+              }`}
           >
             繁
           </button>
         </div>
 
         <span
-          className={`px-3 py-1 rounded-full text-xs font-medium border ${
-            editMode
-              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-              : "bg-slate-50 text-slate-600 border-slate-200"
-          }`}
+          className={`px-3 py-1 rounded-full text-xs font-medium border ${editMode
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : "bg-slate-50 text-slate-600 border-slate-200"
+            }`}
         >
           {editMode ? t("mode.edit") : t("mode.view")}
         </span>
@@ -785,7 +982,11 @@ export default function Home() {
       {/* RIGHT PANEL */}
       <RightPanel
         isOpen={isPanelOpen}
-        toggle={() => setIsPanelOpen((v) => !v)}
+        toggle={() => {
+          // nếu đang tắt panel và mở lại → xoá viewCamera để trở về alert mode
+          if (!isPanelOpen) setViewCamera(null);
+          setIsPanelOpen((v) => !v);
+        }}
         editMode={editMode}
         placingType={placingType}
         onPlaceTypeChange={setPlacingType}
@@ -799,6 +1000,10 @@ export default function Home() {
         onPickCameraCode={handlePickCameraCode}
         alerts={alerts}
         onAlertClick={handleAlertClick}
+        // truyền camera để hiển thị panel "camera information"
+        viewCamera={viewCamera}
+        // NEW: truyền danh sách alert đã xem
+        seenAlertIds={seenAlertIds}
       />
 
       {/* Confirm dialog lưu cấu hình */}
@@ -821,6 +1026,92 @@ export default function Home() {
         animationData={alertState.animationData}
         loop={true}
       />
+
+      {/* Dialog hiển thị ảnh full khi click alert – style đồng bộ inspector */}
+      {viewedAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="relative w-full max-w-5xl max-h-[92vh] bg-slate-950/95 rounded-3xl shadow-2xl border border-slate-800/70 overflow-hidden flex flex-col">
+            {/* Nút close nổi góc phải */}
+            <button
+              onClick={() => setViewedAlert(null)}
+              className="
+                absolute right-4 top-2 z-10
+                flex h-8 w-8 items-center justify-center
+                rounded-full
+                bg-red-500/80 text-white
+                hover:bg-red-600/90
+                shadow-md border border-white/40
+                transition
+              "
+            >
+              <FiX className="w-4 h-4" />
+            </button>
+
+            {/* HEADER */}
+            <div className="h-11 px-6 flex items-center justify-between bg-slate-900/90 border-b border-slate-800">
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                  {t("alerts.camera")}
+                </span>
+                <span className="text-xs md:text-sm font-semibold text-slate-100">
+                  {viewedAlert.camera_code || "—"}
+                </span>
+              </div>
+
+              <div className="hidden md:flex flex-col items-end text-[10px] text-slate-300">
+                {/* giữ lại chỗ dành cho text sau này nếu cần */}
+              </div>
+            </div>
+
+            {/* BODY – IMAGE */}
+            <div className="flex-1 bg-black flex items-center justify-center">
+              {viewedAlert.fullUrl ? (
+                <img
+                  src={viewedAlert.fullUrl}
+                  alt={`Alert ${viewedAlert.camera_code || ""}`}
+                  className="max-w-full max-h-full object-contain"
+                />
+              ) : viewedAlert.thumbUrl ? (
+                <img
+                  src={viewedAlert.thumbUrl}
+                  alt={`Alert ${viewedAlert.camera_code || ""}`}
+                  className="max-w-full max-h-full object-contain"
+                />
+              ) : (
+                <p className="text-xs text-slate-200 p-4">
+                  {t("alerts.noImage") || "No image available."}
+                </p>
+              )}
+            </div>
+
+            {/* FOOTER */}
+            <div className="px-6 py-3 bg-slate-900/95 border-t border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-2 text-[11px] text-slate-300">
+              <div className="flex-1 min-w-0">
+                {viewedEventText ? (
+                  <p className="truncate">
+                    <span className="font-semibold">
+                      {t("alerts.genericPrefix")}{" "}
+                    </span>
+                    <span>{viewedEventText}</span>
+                  </p>
+                ) : (
+                  <p className="truncate">
+                    {t("alerts.camera")}:{" "}
+                    <span className="font-mono font-semibold">
+                      {viewedAlert.camera_code || "—"}
+                    </span>
+                  </p>
+                )}
+
+              </div>
+
+              <div className="md:text-right font-mono text-slate-400">
+                {viewedAlertTime}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Inspector - WINDOW MODE (dùng Rnd) */}
       {inspector.open &&
@@ -856,8 +1147,7 @@ export default function Home() {
             <div className="w-full h-full overflow-hidden bg-slate-950/95 backdrop-blur-sm flex flex-col rounded-2xl shadow-2xl border border-slate-800/60">
               <div className="h-10 px-4 flex items-center justify-between bg-slate-900/90 border-b border-slate-700">
                 <div className="text-xs font-semibold text-slate-100 truncate">
-                  {inspector.camera.code ||
-                    `Camera #${inspector.camera.id}`}
+                  {inspector.camera.code || `Camera #${inspector.camera.id}`}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -878,20 +1168,23 @@ export default function Home() {
               {/* SNAPSHOT ZONE */}
               <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
                 <img
-                  src={`${SNAP_URL}&_=${snapTick}`}
-                  alt={`Camera snapshot ${
-                    inspector.camera.code || inspector.camera.id
-                  }`}
+                  src={buildSnapshotUrl(inspector.camera.ip, snapTick)}
+                  alt={`Camera snapshot ${inspector.camera.code || inspector.camera.id}`}
                   className="max-w-full max-h-full object-contain"
                   onLoad={handleSnapshotLoad}
                   onError={() => {
-                    console.warn("Snapshot load error for", SNAP_URL);
+                    console.warn(
+                      "Snapshot load error for IP",
+                      inspector.camera.ip
+                    );
                   }}
                 />
+
               </div>
             </div>
           </Rnd>
         )}
+
 
       {/* Floating Inspector - FULLSCREEN MODE (KHÔNG dùng Rnd) */}
       {inspector.open &&
@@ -922,17 +1215,30 @@ export default function Home() {
               </div>
 
               <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
-                <img
+                {/* <img
                   src={`${SNAP_URL}&_=${snapTick}`}
-                  alt={`Camera snapshot ${
-                    inspector.camera.code || inspector.camera.id
-                  }`}
+                  alt={`Camera snapshot ${inspector.camera.code || inspector.camera.id
+                    }`}
                   className="max-w-full max-h-full object-contain"
                   onLoad={handleSnapshotLoad}
                   onError={() => {
                     console.warn("Snapshot load error for", SNAP_URL);
                   }}
+                /> */}
+                <img
+                  src={buildSnapshotUrl(inspector.camera.ip, snapTick)}
+                  alt={`Camera snapshot ${inspector.camera.code || inspector.camera.id}`}
+                  className="max-w-full max-h-full object-contain"
+                  onLoad={handleSnapshotLoad}
+                  onError={() => {
+                    console.warn(
+                      "Snapshot load error for IP",
+                      inspector.camera.ip
+                    );
+                  }}
                 />
+
+
               </div>
             </div>
           </div>

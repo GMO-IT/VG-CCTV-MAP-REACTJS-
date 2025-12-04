@@ -16,19 +16,46 @@ export default function RightPanel({
   onUpdateSelectedCamera,
   onClickSave,
 
-  // danh sách camera chưa map
+  // camera chưa map
   unmappedCameras = [],
   onPickCameraCode,
 
-  // NEW: danh sách cảnh báo + callback khi click
+  // alert list (dùng cho view mode)
   alerts = [],
   onAlertClick,
+
+  // camera để xem info khi phải chuột trong view mode
+  viewCamera = null,
+
+  // NEW: danh sách id alert đã xem
+  seenAlertIds = [],
 }) {
   const { t, i18n } = useTranslation("common");
 
   const [showHowTo, setShowHowTo] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
+  const seenSet = useMemo(
+    () => new Set(seenAlertIds || []),
+    [seenAlertIds]
+  );
+  const getEventLabelKey = (code) => {
+    if (!code) return "alerts.events.unknown";
+    const c = String(code).toLowerCase();
+
+    switch (c) {
+      case "crowb":
+        return "alerts.events.crowb";
+      case "intruder":
+        return "alerts.events.intruder";
+      case "fire":
+        return "alerts.events.fire";
+      case "smartphone":
+        return "alerts.events.smartphone";
+      default:
+        return "alerts.events.unknown";
+    }
+  };
   // ===== helper format time từ created_unix (seconds) =====
   const formatAlertTime = (unixSec) => {
     if (!unixSec) return "";
@@ -41,6 +68,33 @@ export default function RightPanel({
       });
     } catch {
       return d.toISOString().substring(11, 19);
+    }
+  };
+
+  // ===== đổi loại camera khi click type button (chỉ dùng editMode) =====
+  const handleChangeType = (type) => {
+    const nextType = placingType === type ? null : type;
+    onPlaceTypeChange(nextType);
+
+    if (!selectedCamera || !onUpdateSelectedCamera) return;
+
+    if (type === "cam360") {
+      onUpdateSelectedCamera({
+        type: "cam360",
+        radius: selectedCamera.radius || 90,
+        range: undefined,
+        angle: undefined,
+      });
+    } else {
+      onUpdateSelectedCamera({
+        type,
+        range: selectedCamera.range || 100,
+        angle:
+          typeof selectedCamera.angle === "number"
+            ? selectedCamera.angle
+            : 0,
+        radius: undefined,
+      });
     }
   };
 
@@ -66,8 +120,8 @@ export default function RightPanel({
     const langKey = i18n.language?.startsWith("vi")
       ? "vi"
       : i18n.language?.startsWith("en")
-      ? "en"
-      : "cn";
+        ? "en"
+        : "cn";
 
     return (
       <div className="mt-4 pt-3 border-t border-slate-200 flex flex-col min-h-0">
@@ -92,7 +146,7 @@ export default function RightPanel({
           />
         </div>
 
-        {/* LIST chiếm toàn bộ khoảng trống còn lại */}
+        {/* LIST */}
         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
           {filteredUnmapped.map((cam) => {
             const loc = cam.location_json || {};
@@ -116,11 +170,10 @@ export default function RightPanel({
                 </div>
 
                 <span
-                  className={`ml-2 w-2.5 h-2.5 flex-shrink-0 rounded-full ${
-                    cam.status === "working"
+                  className={`ml-2 w-2.5 h-2.5 flex-shrink-0 rounded-full ${cam.status === "working"
                       ? "bg-emerald-500"
                       : "bg-red-500"
-                  }`}
+                    }`}
                 />
               </button>
             );
@@ -130,11 +183,244 @@ export default function RightPanel({
     );
   };
 
+  // ====== ALERT LIST (VIEW MODE) ======
+  // ====== ALERT LIST (VIEW MODE) ======
+const renderAlertsOnly = () => {
+  // Không có cảnh báo
+  if (!alerts.length) {
+    return (
+      <div className="flex-1 p-5 text-sm text-slate-700 space-y-2">
+        <p className="text-xs font-semibold text-slate-700">
+          {t("alerts.emptyTitle")}
+        </p>
+        <p className="text-[11px] text-slate-500">
+          {t("alerts.emptyDesc")}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 p-5 text-sm text-slate-700 space-y-3">
+      <div>
+        <p className="text-xs font-semibold text-red-600">
+          {t("alerts.listTitle")}
+        </p>
+        <p className="text-[11px] text-slate-500">
+          {t("alerts.listDesc")}
+        </p>
+      </div>
+
+      <div className="space-y-3 max-h-[calc(100vh-170px)] overflow-y-auto pr-1">
+        {alerts.map((alert) => {
+          const imageUrl = alert.fullUrl || alert.thumbUrl;
+          const isSeen = seenSet.has(alert.id);
+
+          // 👉 LẤY KEY + TEXT TỪ i18n
+          const eventKey = getEventLabelKey(alert.event_code);
+          const eventText = t(eventKey);
+
+          return (
+            <button
+              key={alert.id}
+              onClick={() => onAlertClick && onAlertClick(alert)}
+              className={`
+                w-full text-left rounded-xl border
+                flex flex-col overflow-hidden transition
+                ${
+                  isSeen
+                    ? "border-slate-200 bg-slate-50/90 hover:bg-slate-100/90 opacity-80"
+                    : "border-red-100 bg-red-50/70 hover:bg-red-100/80"
+                }
+              `}
+            >
+              {imageUrl && (
+                <div className="w-full h-40 bg-black/70">
+                  <img
+                    src={imageUrl}
+                    alt={`Alert ${alert.camera_code}`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div className="px-3 pb-2 pt-2 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-800 truncate">
+                    {alert.camera_code || "—"}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-slate-500">
+                      {formatAlertTime(alert.created_unix)}
+                    </span>
+                    <span
+                      className={`
+                        w-1.5 h-1.5 rounded-full
+                        ${isSeen ? "bg-slate-300" : "bg-red-500"}
+                      `}
+                    />
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-700 leading-snug">
+                  {eventText}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+
+  // ====== CAMERA INFO ONLY (viewCamera != null) ======
+  const renderCameraInfoOnly = () => {
+    const cam = viewCamera;
+    const langKey = i18n.language?.startsWith("vi")
+      ? "vi"
+      : i18n.language?.startsWith("en")
+        ? "en"
+        : "cn";
+
+    if (!cam) {
+      return (
+        <div className="flex-1 p-5 text-sm text-slate-700 space-y-2">
+          <p className="text-xs text-slate-500">
+            {t("panel.noCamera")}
+          </p>
+        </div>
+      );
+    }
+
+    const locLabel =
+      cam.location_json?.[langKey] ||
+      Object.values(cam.location_json || {})[0] ||
+      "";
+
+    const typeLabel =
+      cam.type === "upper"
+        ? t("camera.typeUpper")
+        : cam.type === "lower"
+          ? t("camera.typeLower")
+          : cam.type === "cam360"
+            ? t("camera.type360")
+            : cam.type || "—";
+
+    const statusActive = cam.status === "working";
+    const statusText = statusActive
+      ? t("status.active")
+      : t("status.inactive");
+
+    const mappedAt = cam.created_at || "—";
+
+    return (
+      <div className="flex-1 p-5 text-sm text-slate-700 space-y-5">
+        {/* Thông tin cơ bản */}
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-slate-600">
+            {t("camera.infoTitle")}
+          </p>
+          <p className="text-xs text-slate-500">
+            {t("camera.code")}:{" "}
+            <span className="font-mono font-semibold">
+              {cam.code || "—"}
+            </span>
+          </p>
+          {locLabel && (
+            <p className="text-xs text-slate-500">
+              {t("camera.locationLabel")}:{" "}
+              <span className="font-semibold">{locLabel}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Cấu hình kỹ thuật */}
+        <div className="space-y-1 text-xs text-slate-600">
+          <p className="font-semibold">
+            {t("camera.configTitle")}
+          </p>
+          <p className="text-slate-500">
+            {t("camera.type")}:{" "}
+            <span className="font-semibold">{typeLabel}</span>
+          </p>
+          {cam.type === "cam360" ? (
+            <p className="text-slate-500">
+              {t("camera.radius")}:{" "}
+              <span className="font-semibold">
+                {cam.radius ?? "—"}
+              </span>
+            </p>
+          ) : (
+            <>
+              <p className="text-slate-500">
+                {t("camera.viewDistance")}:{" "}
+                <span className="font-semibold">
+                  {cam.range ?? "—"}
+                </span>
+              </p>
+              <p className="text-slate-500">
+                {t("camera.rotationAngle")}:{" "}
+                <span className="font-semibold">
+                  {cam.angle ?? "0"}
+                </span>
+                °
+              </p>
+            </>
+          )}
+          <p className="text-slate-500">
+            {t("camera.location")}:{" "}
+            <span className="font-mono">
+              x: {cam.x?.toFixed(1) ?? "—"}, y:{" "}
+              {cam.y?.toFixed(1) ?? "—"}
+            </span>
+          </p>
+        </div>
+
+        {/* Trạng thái hoạt động */}
+        {/* <div className="space-y-1 text-xs text-slate-600">
+          <p className="font-semibold">
+            {t("camera.statusTitle")}
+          </p>
+          <span
+            className={`
+              inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px]
+              ${statusActive
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-red-50 text-red-700"
+              }
+            `}
+          >
+            <span
+              className={`
+                w-1.5 h-1.5 rounded-full
+                ${statusActive ? "bg-emerald-500" : "bg-red-500"}
+              `}
+            />
+            {statusText}
+          </span>
+        </div> */}
+
+        {/* Thông tin layout */}
+        <div className="space-y-1 text-xs text-slate-600">
+          <p className="font-semibold">
+            {t("camera.layoutInfo")}
+          </p>
+          <p className="text-slate-500">
+            {t("camera.mappedAt")}:{" "}
+            <span className="font-mono">{mappedAt}</span>
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   // =============== EDIT MODE CONTENT ================
   const renderEditContent = () => {
     return (
       <div className="flex-1 flex flex-col p-5 text-sm text-slate-700 min-h-0 space-y-4">
-        {/* HOW TO USE - Collapsible */}
+        {/* HOW TO USE */}
         <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
           <button
             onClick={() => setShowHowTo((v) => !v)}
@@ -167,33 +453,21 @@ export default function RightPanel({
               bgClass="bg-orange-500"
               Icon={GiCctvCamera}
               label={t("panel.typeUpper")}
-              onClick={() =>
-                onPlaceTypeChange(
-                  placingType === "upper" ? null : "upper"
-                )
-              }
+              onClick={() => handleChangeType("upper")}
             />
             <TypeButton
               active={placingType === "lower"}
               bgClass="bg-amber-400"
               Icon={GiCctvCamera}
               label={t("panel.typeLower")}
-              onClick={() =>
-                onPlaceTypeChange(
-                  placingType === "lower" ? null : "lower"
-                )
-              }
+              onClick={() => handleChangeType("lower")}
             />
             <TypeButton
               active={placingType === "cam360"}
               bgClass="bg-sky-500"
               Icon={TbDeviceComputerCamera}
               label={t("panel.type360")}
-              onClick={() =>
-                onPlaceTypeChange(
-                  placingType === "cam360" ? null : "cam360"
-                )
-              }
+              onClick={() => handleChangeType("cam360")}
             />
           </div>
         </div>
@@ -269,84 +543,17 @@ export default function RightPanel({
           </p>
         )}
 
-        {/* UNMAPPED LIST chiếm phần còn lại */}
         {renderUnmappedSection()}
       </div>
     );
   };
 
-  // =============== VIEW MODE: HIỂN THỊ CẢNH BÁO ================
+  // =============== VIEW MODE CONTENT ================
   const renderViewContent = () => {
-    if (!alerts.length) {
-      return (
-        <div className="flex-1 p-5 text-sm text-slate-700 space-y-2">
-          <p className="text-xs font-semibold text-slate-700">
-            {t("alerts.emptyTitle")}
-          </p>
-          <p className="text-xs text-slate-500">
-            {t("alerts.emptyDesc")}
-          </p>
-        </div>
-      );
+    if (viewCamera) {
+      return renderCameraInfoOnly();
     }
-
-    return (
-      <div className="flex-1 p-5 text-sm text-slate-700 space-y-3">
-        <div>
-          <p className="text-xs font-semibold text-red-600">
-            {t("alerts.listTitle")}
-          </p>
-          <p className="text-[11px] text-slate-500">
-            {t("alerts.listDesc")}
-          </p>
-        </div>
-
-        <div className="space-y-2 max-h-[calc(100vh-160px)] overflow-y-auto pr-1">
-          {alerts.map((alert) => (
-            <button
-              key={alert.id}
-              onClick={() =>
-                onAlertClick && onAlertClick(alert)
-              }
-              className="
-                w-full text-left rounded-lg border border-red-100
-                bg-red-50/70 hover:bg-red-100/80 transition
-                flex items-center gap-3 p-2.5
-              "
-            >
-              {alert.thumbUrl && (
-                <div className="w-40 h-20 rounded-md overflow-hidden bg-black/60 flex-shrink-0">
-                  <img
-                    src={alert.thumbUrl}
-                    alt={`Alert ${alert.camera_code}`}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-800 truncate">
-                    {alert.camera_code || "—"}
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-500">
-                    {formatAlertTime(alert.created_unix)}
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-slate-700 mt-0.5">
-                  {alert.event_code === "smartphone"
-                    ? t("alerts.smartphoneEvent")
-                    : `${t("alerts.genericPrefix")} ${
-                        alert.event_code || ""
-                      }`}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+    return renderAlertsOnly();
   };
 
   return (
@@ -354,7 +561,7 @@ export default function RightPanel({
       <div
         className={`
           absolute inset-y-0 right-0
-          h-full w-80
+          h-full w-[24rem]
           bg-white/95 backdrop-blur-sm
           shadow-2xl rounded-l-3xl
           border-l border-slate-200
@@ -366,12 +573,18 @@ export default function RightPanel({
         {/* HEADER */}
         <div className="p-5 border-b border-slate-200 flex-shrink-0">
           <h2 className="text-slate-900 font-semibold text-lg">
-            {editMode ? t("panel.titleEdit") : t("alerts.header")}
+            {editMode
+              ? t("panel.titleEdit")
+              : viewCamera
+                ? t("panel.titleView")
+                : t("alerts.header")}
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             {editMode
               ? t("panel.subtitleEdit")
-              : t("alerts.subtitle")}
+              : viewCamera
+                ? t("panel.subtitleView")
+                : t("alerts.subtitle")}
           </p>
         </div>
 
@@ -403,7 +616,7 @@ export default function RightPanel({
           bg-slate-900 text-slate-50
           shadow-xl border border-slate-900/70
           transition-all
-          ${isOpen ? "right-80" : "right-0"}
+          ${isOpen ? "right-[24rem]" : "right-0"}
         `}
       >
         <span className="text-lg">{isOpen ? "›" : "‹"}</span>
@@ -420,10 +633,9 @@ function TypeButton({ active, bgClass, Icon, label, onClick }) {
       onClick={onClick}
       className={`
         flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition
-        ${
-          active
-            ? "border-slate-900 bg-slate-900/5 text-slate-900"
-            : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+        ${active
+          ? "border-slate-900 bg-slate-900/5 text-slate-900"
+          : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
         }
       `}
     >
